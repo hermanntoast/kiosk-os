@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# Kiosk X11 Session
+#
+
+# Load kiosk URL from config
+if [ -f /etc/kiosk.conf ]; then
+    . /etc/kiosk.conf
+fi
+
+# Fallback URL
+if [ -z "$KIOSK_URL" ]; then
+    KIOSK_URL="https://example.com"
+fi
+
+export KIOSK_URL
+
+# Set keyboard layout (German)
+setxkbmap de 2>/dev/null || true
+
+# Disable screen saver and power management
+xset s off
+xset s noblank
+xset -dpms
+
+# Hide cursor after 1 second of inactivity (requires unclutter, optional)
+# unclutter -idle 1 &
+
+# Set background to black
+xsetroot -solid black 2>/dev/null || true
+
+# Wait for X to be ready
+sleep 1
+
+# Start D-Bus session bus (required for Chromium)
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    eval $(dbus-launch --sh-syntax)
+    export DBUS_SESSION_BUS_ADDRESS
+fi
+
+# Execute the kiosk browser
+exec /usr/bin/kiosk-browser

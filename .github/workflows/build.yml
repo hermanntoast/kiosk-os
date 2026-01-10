@@ -1,0 +1,167 @@
+name: Build Kiosk OS
+
+on:
+  push:
+    branches: [master, main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      kiosk_url:
+        description: 'Default Kiosk URL'
+        required: false
+        default: 'https://example.com'
+
+env:
+  BR2_DL_DIR: ${{ github.workspace }}/dl-cache
+  BR2_CCACHE_DIR: ${{ github.workspace }}/ccache
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 6 Stunden max
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libncurses5-dev \
+            bc \
+            flex \
+            bison \
+            libssl-dev \
+            unzip \
+            rsync \
+            cpio \
+            wget \
+            file \
+            locales \
+            ccache \
+            python3 \
+            python3-pip \
+            libelf-dev
+
+          # Generate locales
+          sudo locale-gen en_US.UTF-8
+
+      - name: Free up disk space
+        run: |
+          # Remove unnecessary packages to free space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache
+          df -h
+
+      - name: Cache Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: dl-cache
+          key: buildroot-dl-${{ hashFiles('configs/kiosk_x86_64_defconfig') }}
+          restore-keys: |
+            buildroot-dl-
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ccache
+          key: buildroot-ccache-${{ github.sha }}
+          restore-keys: |
+            buildroot-ccache-
+
+      - name: Create cache directories
+        run: |
+          mkdir -p ${{ env.BR2_DL_DIR }}
+          mkdir -p ${{ env.BR2_CCACHE_DIR }}
+
+      - name: Configure Buildroot
+        run: |
+          make defconfig
+
+          # Enable ccache
+          echo "BR2_CCACHE=y" >> buildroot/.config
+          echo "BR2_CCACHE_DIR=\"${{ env.BR2_CCACHE_DIR }}\"" >> buildroot/.config
+
+          # Set download directory
+          echo "BR2_DL_DIR=\"${{ env.BR2_DL_DIR }}\"" >> buildroot/.config
+
+          # Regenerate config
+          make -C buildroot BR2_EXTERNAL=${{ github.workspace }} olddefconfig
+
+      - name: Build Kiosk OS
+        run: |
+          # Show config info
+          echo "Starting Buildroot build..."
+          echo "Download cache: ${{ env.BR2_DL_DIR }}"
+          echo "CCCache dir: ${{ env.BR2_CCACHE_DIR }}"
+
+          # Build with parallel jobs
+          make -C buildroot BR2_EXTERNAL=${{ github.workspace }} -j$(nproc)
+
+      - name: List build artifacts
+        run: |
+          ls -lah buildroot/output/images/
+          echo "---"
+          du -sh buildroot/output/images/*
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kiosk-os-x86_64
+          path: |
+            buildroot/output/images/rootfs.iso9660
+            buildroot/output/images/rootfs.ext4
+          retention-days: 30
+          compression-level: 0  # Already compressed
+
+      - name: Generate checksums
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd buildroot/output/images
+          sha256sum rootfs.iso9660 > rootfs.iso9660.sha256
+          sha256sum rootfs.ext4 > rootfs.ext4.sha256
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            buildroot/output/images/rootfs.iso9660
+            buildroot/output/images/rootfs.iso9660.sha256
+            buildroot/output/images/rootfs.ext4
+            buildroot/output/images/rootfs.ext4.sha256
+          body: |
+            ## Kiosk OS ${{ github.ref_name }}
+
+            ### Download
+            - `rootfs.iso9660` - Bootable ISO image for USB/CD
+            - `rootfs.ext4` - Root filesystem image
+
+            ### Usage
+
+            Write ISO to USB:
+            ```bash
+            sudo dd if=rootfs.iso9660 of=/dev/sdX bs=4M status=progress
+            ```
+
+            Boot with custom URL:
+            ```
+            kiosk_url=https://your-dashboard.com
+            ```
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show ccache stats
+        run: |
+          ccache -s || true
