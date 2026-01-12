@@ -161,49 +161,49 @@ jobs:
           echo "---"
           du -sh buildroot/output/images/*
 
+      - name: Prepare release artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          cd buildroot/output/images
+          cp rootfs.iso9660 "kiosk-os-${VERSION}.iso"
+          sha256sum "kiosk-os-${VERSION}.iso" > "kiosk-os-${VERSION}.iso.sha256"
+          echo "RELEASE_VERSION=${VERSION}" >> $GITHUB_ENV
+
       - name: Upload ISO artifact
         uses: actions/upload-artifact@v4
         with:
           name: kiosk-os-x86_64
-          path: |
-            buildroot/output/images/rootfs.iso9660
-            buildroot/output/images/rootfs.ext4
+          path: buildroot/output/images/rootfs.iso9660
           retention-days: 30
-          compression-level: 0  # Already compressed
-
-      - name: Generate checksums
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          cd buildroot/output/images
-          sha256sum rootfs.iso9660 > rootfs.iso9660.sha256
-          sha256sum rootfs.ext4 > rootfs.ext4.sha256
+          compression-level: 0
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            buildroot/output/images/rootfs.iso9660
-            buildroot/output/images/rootfs.iso9660.sha256
-            buildroot/output/images/rootfs.ext4
-            buildroot/output/images/rootfs.ext4.sha256
+            buildroot/output/images/kiosk-os-${{ env.RELEASE_VERSION }}.iso
+            buildroot/output/images/kiosk-os-${{ env.RELEASE_VERSION }}.iso.sha256
           body: |
-            ## Kiosk OS ${{ github.ref_name }}
+            ## Kiosk OS ${{ env.RELEASE_VERSION }}
 
             ### Download
-            - `rootfs.iso9660` - Bootable ISO image for USB/CD
-            - `rootfs.ext4` - Root filesystem image
 
-            ### Usage
+            Bootbares ISO-Image für USB-Stick oder VM.
 
-            Write ISO to USB:
+            ### Installation
+
             ```bash
-            sudo dd if=rootfs.iso9660 of=/dev/sdX bs=4M status=progress
+            sudo dd if=kiosk-os-${{ env.RELEASE_VERSION }}.iso of=/dev/sdX bs=4M status=progress
+            sync
             ```
 
-            Boot with custom URL:
+            ### Eigene URL verwenden
+
+            Beim Booten im SYSLINUX-Menü Tab drücken und anpassen:
             ```
-            kiosk_url=https://your-dashboard.com
+            kiosk_url=https://deine-url.de
             ```
           draft: false
           prerelease: false
