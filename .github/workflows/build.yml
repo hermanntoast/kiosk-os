@@ -12,7 +12,7 @@ on:
       kiosk_url:
         description: 'Default Kiosk URL'
         required: false
-        default: 'https://example.com'
+        default: 'https://luxcode.io/'
 
 env:
   BR2_DL_DIR: ${{ github.workspace }}/dl-cache
@@ -48,7 +48,9 @@ jobs:
             ccache \
             python3 \
             python3-pip \
-            libelf-dev
+            libelf-dev \
+            libgdk-pixbuf2.0-dev \
+            imagemagick
 
           # Generate locales
           sudo locale-gen en_US.UTF-8
@@ -97,7 +99,7 @@ jobs:
           # Regenerate config
           make -C buildroot BR2_EXTERNAL=${{ github.workspace }} olddefconfig
 
-      - name: Build Kiosk OS
+      - name: Build Kiosk OS (initial)
         run: |
           # Show config info
           echo "Starting Buildroot build..."
@@ -105,6 +107,52 @@ jobs:
           echo "CCCache dir: ${{ env.BR2_CCACHE_DIR }}"
 
           # Build with parallel jobs
+          make -C buildroot BR2_EXTERNAL=${{ github.workspace }} -j$(nproc)
+
+      - name: Build custom splash image
+        run: |
+          SPLASH_DIR="${{ github.workspace }}/board/kiosk/splash"
+          PSPLASH_BUILD="buildroot/output/build/psplash-0.1"
+
+          # Find splash image (png, jpg, or svg)
+          SPLASH_IMAGE=""
+          for ext in png PNG jpg JPG jpeg JPEG; do
+            if [ -f "$SPLASH_DIR/splash.$ext" ]; then
+              SPLASH_IMAGE="$SPLASH_DIR/splash.$ext"
+              break
+            fi
+            if [ -f "$SPLASH_DIR/logo.$ext" ]; then
+              SPLASH_IMAGE="$SPLASH_DIR/logo.$ext"
+              break
+            fi
+          done
+
+          if [ -z "$SPLASH_IMAGE" ]; then
+            echo "No custom splash image found in $SPLASH_DIR"
+            echo "To add a custom splash, place splash.png or logo.png in board/kiosk/splash/"
+            exit 0
+          fi
+
+          echo "Found splash image: $SPLASH_IMAGE"
+
+          if [ ! -d "$PSPLASH_BUILD" ]; then
+            echo "psplash build directory not found, skipping custom splash"
+            exit 0
+          fi
+
+          # Convert to PNG if needed and resize
+          TEMP_PNG="/tmp/splash_converted.png"
+          convert "$SPLASH_IMAGE" -resize 480x272 -background black -gravity center -extent 480x272 "$TEMP_PNG"
+
+          # Generate psplash header
+          cd "$PSPLASH_BUILD"
+          gdk-pixbuf-csource --struct --name=PSPLASH_IMG "$TEMP_PNG" > psplash-poky-img.h
+
+          echo "Custom splash image integrated!"
+
+          # Rebuild psplash and regenerate image
+          cd ${{ github.workspace }}
+          make -C buildroot BR2_EXTERNAL=${{ github.workspace }} psplash-rebuild
           make -C buildroot BR2_EXTERNAL=${{ github.workspace }} -j$(nproc)
 
       - name: List build artifacts

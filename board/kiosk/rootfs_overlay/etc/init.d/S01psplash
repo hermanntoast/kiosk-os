@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Start psplash splash screen
+#
+
+case "$1" in
+    start)
+        # Only start if 'splash' is in kernel cmdline
+        if grep -q "splash" /proc/cmdline 2>/dev/null; then
+            echo "Starting psplash..."
+            # Start psplash in background
+            /usr/bin/psplash &
+            # Give it time to initialize
+            sleep 0.5
+        fi
+        ;;
+    stop)
+        echo "Stopping psplash..."
+        # Send quit message
+        /usr/bin/psplash-write "QUIT" 2>/dev/null || true
+        killall psplash 2>/dev/null || true
+        ;;
+    restart)
+        $0 stop
+        $0 start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac
+
+exit 0

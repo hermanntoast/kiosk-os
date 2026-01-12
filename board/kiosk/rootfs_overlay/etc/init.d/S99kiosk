@@ -14,7 +14,7 @@ start() {
 
     # Default URL if not specified
     if [ -z "$KIOSK_URL" ]; then
-        KIOSK_URL="https://example.com"
+        KIOSK_URL="https://luxcode.io/"
     fi
 
     # Export for xinitrc
@@ -22,6 +22,11 @@ start() {
 
     # Wait for display devices
     sleep 2
+
+    # Stop splash screen before starting X
+    /usr/bin/psplash-write "QUIT" 2>/dev/null || true
+    killall psplash 2>/dev/null || true
+    sleep 0.5
 
     # Start X server with kiosk browser
     /sbin/start-stop-daemon -S -b -m -p $PIDFILE \

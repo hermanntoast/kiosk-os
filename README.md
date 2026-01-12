@@ -75,8 +75,8 @@ sync
 
 ## Booten
 
-### Standard-URL (example.com)
-Einfach booten - die Standard-URL ist `https://example.com`.
+### Standard-URL
+Einfach booten - die Standard-URL ist `https://luxcode.io/`.
 
 ### Eigene URL
 Beim Bootloader (SYSLINUX) die Kernel-Zeile editieren (Tab-Taste) und anpassen:
@@ -96,11 +96,19 @@ kiosk_url=https://home-assistant.local:8123/lovelace/0
 kiosk_url=file:///var/www/index.html
 ```
 
+## Custom Splash Image
+
+Um ein eigenes Boot-Splash-Bild zu verwenden:
+
+1. Lege dein Bild als `board/kiosk/splash/splash.png` oder `logo.png` ab
+2. Empfohlene Größe: 480x272 Pixel (wird automatisch skaliert)
+3. Beim Build wird das Bild automatisch in psplash integriert
+
 ## Debugging
 
 Boot mit `init=/bin/sh` für eine Shell ohne X11:
 ```
-kiosk_url=https://example.com init=/bin/sh
+kiosk_url=https://luxcode.io/ init=/bin/sh
 ```
 
 SSH ist aktiviert (Dropbear) - Standard-Login ist `root` ohne Passwort.
@@ -115,8 +123,10 @@ kiosk-os/
 ├── board/
 │   └── kiosk/
 │       ├── rootfs_overlay/       # Overlay-Dateien fürs Rootfs
+│       ├── splash/               # Custom Splash Image (splash.png)
 │       ├── isolinux.cfg          # Bootloader-Konfiguration
 │       └── post-build.sh         # Post-Build Script
+├── .github/workflows/            # GitHub Actions CI/CD
 ├── Config.in                     # BR2_EXTERNAL Config
 ├── external.mk                   # BR2_EXTERNAL Makefiles
 ├── external.desc                 # BR2_EXTERNAL Beschreibung

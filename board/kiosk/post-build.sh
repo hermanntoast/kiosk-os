@@ -9,6 +9,7 @@ BOARD_DIR="$(dirname "$0")"
 TARGET_DIR="$1"
 
 # Make init scripts executable
+chmod +x "${TARGET_DIR}/etc/init.d/S01psplash" 2>/dev/null || true
 chmod +x "${TARGET_DIR}/etc/init.d/S99kiosk" 2>/dev/null || true
 chmod +x "${TARGET_DIR}/etc/X11/xinit/xinitrc" 2>/dev/null || true
 chmod +x "${TARGET_DIR}/usr/bin/kiosk-browser" 2>/dev/null || true
@@ -19,7 +20,7 @@ mkdir -p "${TARGET_DIR}/tmp"
 
 # Create default kiosk config if not exists
 if [ ! -f "${TARGET_DIR}/etc/kiosk.conf" ]; then
-    echo 'KIOSK_URL="https://example.com"' > "${TARGET_DIR}/etc/kiosk.conf"
+    echo 'KIOSK_URL="https://luxcode.io/"' > "${TARGET_DIR}/etc/kiosk.conf"
 fi
 
 # Set hostname
