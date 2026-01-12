@@ -10,8 +10,29 @@ fi
 
 # Fallback URL
 if [ -z "$KIOSK_URL" ]; then
-    KIOSK_URL="https://example.com"
+    KIOSK_URL="https://luxcode.io/"
 fi
+
+# Find Chromium binary
+CHROMIUM=""
+for c in /usr/bin/chromium /usr/bin/chromium-browser /usr/local/bin/chromium; do
+    if [ -x "$c" ]; then
+        CHROMIUM="$c"
+        break
+    fi
+done
+
+if [ -z "$CHROMIUM" ]; then
+    echo "ERROR: Chromium not found!"
+    echo "Available browsers:"
+    ls -la /usr/bin/*chrom* 2>/dev/null || echo "  none"
+    ls -la /usr/bin/*firefox* 2>/dev/null || echo "  none"
+    echo "Falling back to xterm..."
+    exec xterm -e "echo 'Chromium not found. URL: $KIOSK_URL'; sh"
+fi
+
+echo "Starting browser: $CHROMIUM"
+echo "URL: $KIOSK_URL"
 
 # Create temp directory for Chromium profile
 CHROMIUM_DIR="/tmp/chromium-kiosk"
@@ -22,7 +43,7 @@ while true; do
     # Clear old data on each start
     rm -rf "$CHROMIUM_DIR"/* 2>/dev/null
 
-    chromium \
+    $CHROMIUM \
         --kiosk \
         --no-first-run \
         --no-default-browser-check \
@@ -47,8 +68,12 @@ while true; do
         --autoplay-policy=no-user-gesture-required \
         --user-data-dir="$CHROMIUM_DIR" \
         --window-position=0,0 \
+        --no-sandbox \
+        --disable-gpu \
+        --disable-software-rasterizer \
         "$KIOSK_URL"
 
     # Brief pause before restart
+    echo "Browser exited, restarting in 2 seconds..."
     sleep 2
 done

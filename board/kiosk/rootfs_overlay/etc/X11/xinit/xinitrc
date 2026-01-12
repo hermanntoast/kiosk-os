@@ -10,7 +10,7 @@ fi
 
 # Fallback URL
 if [ -z "$KIOSK_URL" ]; then
-    KIOSK_URL="https://example.com"
+    KIOSK_URL="https://luxcode.io/"
 fi
 
 export KIOSK_URL

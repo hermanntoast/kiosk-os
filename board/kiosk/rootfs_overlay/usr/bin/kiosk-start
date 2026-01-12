@@ -1,27 +1,95 @@
 #!/bin/sh
 #
-# Kiosk Startup Script - called directly from inittab
+# Kiosk Startup Script
+# Called from inittab after system initialization
 #
+
+LOG="/var/log/kiosk.log"
+exec > "$LOG" 2>&1
+echo "=== Kiosk starting at $(date) ==="
 
 # Parse kiosk_url from kernel command line
 KIOSK_URL=$(cat /proc/cmdline | tr ' ' '\n' | grep '^kiosk_url=' | sed 's/^kiosk_url=//')
 
-# Default URL if not specified
 if [ -z "$KIOSK_URL" ]; then
     KIOSK_URL="https://luxcode.io/"
 fi
 
-# Export for X session
+echo "Kiosk URL: $KIOSK_URL"
+
+# Setup environment
 export KIOSK_URL
+export HOME=/root
+export DISPLAY=:0
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
+
+# Save config for other scripts
 echo "KIOSK_URL=\"$KIOSK_URL\"" > /etc/kiosk.conf
 
-# Wait for system to settle
-sleep 2
+# Create runtime directories
+mkdir -p /tmp/.X11-unix
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+chmod 1777 /tmp/.X11-unix
 
-# Stop splash screen if running
-/usr/bin/psplash-write "QUIT" 2>/dev/null || true
+# Wait for system services
+echo "Waiting for system to settle..."
+sleep 3
+
+# Stop splash screen
+if [ -x /usr/bin/psplash-write ]; then
+    /usr/bin/psplash-write "QUIT" 2>/dev/null
+fi
 killall psplash 2>/dev/null || true
-sleep 0.5
+sleep 1
 
-# Start X server with kiosk browser on tty1
-exec /usr/bin/startx /etc/X11/xinit/xinitrc -- :0 vt1 -nocursor -quiet
+# Switch to tty1 and clear screen
+chvt 1 2>/dev/null || true
+clear > /dev/tty1 2>/dev/null || true
+
+# Find X server
+echo "Looking for X server..."
+XSERVER=""
+for x in /usr/bin/Xorg /usr/bin/X; do
+    if [ -x "$x" ]; then
+        XSERVER="$x"
+        echo "Found: $x"
+        break
+    fi
+done
+
+if [ -z "$XSERVER" ]; then
+    echo "ERROR: No X server found!"
+    ls -la /usr/bin/X* 2>&1 || echo "No X binaries found"
+    echo "Starting emergency shell..."
+    exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
+fi
+
+# Check for xinit
+echo "Looking for xinit..."
+ls -la /usr/bin/xinit 2>&1 || echo "xinit not found"
+ls -la /usr/bin/startx 2>&1 || echo "startx not found"
+
+# Start X server
+echo "Starting X server on tty1..."
+
+if [ -x /usr/bin/xinit ]; then
+    echo "Using xinit..."
+    exec /usr/bin/xinit /etc/X11/xinit/xinitrc -- "$XSERVER" :0 vt1 -nocursor -nolisten tcp < /dev/tty1 > /dev/tty1 2>&1
+else
+    echo "xinit not found, starting X directly..."
+    "$XSERVER" :0 vt1 -nocursor -nolisten tcp &
+    XPID=$!
+    echo "X server PID: $XPID"
+    sleep 3
+
+    if ! kill -0 $XPID 2>/dev/null; then
+        echo "ERROR: X server failed to start!"
+        cat /var/log/Xorg.0.log 2>/dev/null | tail -50
+        exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
+    fi
+
+    echo "Running xinitrc..."
+    exec /etc/X11/xinit/xinitrc < /dev/tty1 > /dev/tty1 2>&1
+fi
