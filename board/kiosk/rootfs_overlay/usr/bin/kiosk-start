@@ -1,0 +1,27 @@
+#!/bin/sh
+#
+# Kiosk Startup Script - called directly from inittab
+#
+
+# Parse kiosk_url from kernel command line
+KIOSK_URL=$(cat /proc/cmdline | tr ' ' '\n' | grep '^kiosk_url=' | sed 's/^kiosk_url=//')
+
+# Default URL if not specified
+if [ -z "$KIOSK_URL" ]; then
+    KIOSK_URL="https://luxcode.io/"
+fi
+
+# Export for X session
+export KIOSK_URL
+echo "KIOSK_URL=\"$KIOSK_URL\"" > /etc/kiosk.conf
+
+# Wait for system to settle
+sleep 2
+
+# Stop splash screen if running
+/usr/bin/psplash-write "QUIT" 2>/dev/null || true
+killall psplash 2>/dev/null || true
+sleep 0.5
+
+# Start X server with kiosk browser on tty1
+exec /usr/bin/startx /etc/X11/xinit/xinitrc -- :0 vt1 -nocursor -quiet
