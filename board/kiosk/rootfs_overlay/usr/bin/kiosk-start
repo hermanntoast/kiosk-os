@@ -6,6 +6,8 @@
 
 LOG="/var/log/kiosk.log"
 exec > "$LOG" 2>&1
+set -x  # Enable debug output
+
 echo "=== Kiosk starting at $(date) ==="
 
 # Parse kiosk_url from kernel command line
@@ -22,7 +24,6 @@ export KIOSK_URL
 export HOME=/root
 export DISPLAY=:0
 export XDG_RUNTIME_DIR=/tmp/runtime-root
-export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
 
 # Save config for other scripts
 echo "KIOSK_URL=\"$KIOSK_URL\"" > /etc/kiosk.conf
@@ -33,63 +34,89 @@ mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 chmod 1777 /tmp/.X11-unix
 
+# Check for DRI devices
+echo "=== DRI devices ==="
+ls -la /dev/dri/ 2>&1 || echo "No /dev/dri"
+
 # Wait for system services
 echo "Waiting for system to settle..."
-sleep 3
+sleep 2
 
-# Stop splash screen
-if [ -x /usr/bin/psplash-write ]; then
-    /usr/bin/psplash-write "QUIT" 2>/dev/null
-fi
-killall psplash 2>/dev/null || true
+# Kill psplash completely
+echo "Stopping psplash..."
+killall -9 psplash 2>/dev/null || true
 sleep 1
 
-# Switch to tty1 and clear screen
+# Switch to tty1
+echo "Switching to tty1..."
 chvt 1 2>/dev/null || true
+
+# Clear the framebuffer
+echo "Clearing screen..."
+dd if=/dev/zero of=/dev/fb0 bs=1M count=10 2>/dev/null || true
 clear > /dev/tty1 2>/dev/null || true
 
 # Find X server
-echo "Looking for X server..."
+echo "=== Looking for X server ==="
+ls -la /usr/bin/X* 2>&1
+ls -la /usr/bin/Xorg 2>&1 || echo "No Xorg"
+
 XSERVER=""
 for x in /usr/bin/Xorg /usr/bin/X; do
     if [ -x "$x" ]; then
         XSERVER="$x"
-        echo "Found: $x"
+        echo "Using: $x"
         break
     fi
 done
 
 if [ -z "$XSERVER" ]; then
     echo "ERROR: No X server found!"
-    ls -la /usr/bin/X* 2>&1 || echo "No X binaries found"
-    echo "Starting emergency shell..."
     exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
 fi
 
 # Check for xinit
-echo "Looking for xinit..."
-ls -la /usr/bin/xinit 2>&1 || echo "xinit not found"
-ls -la /usr/bin/startx 2>&1 || echo "startx not found"
+echo "=== Looking for xinit ==="
+ls -la /usr/bin/xinit 2>&1 || echo "No xinit"
+ls -la /usr/bin/startx 2>&1 || echo "No startx"
 
 # Start X server
-echo "Starting X server on tty1..."
+echo "=== Starting X server ==="
 
-if [ -x /usr/bin/xinit ]; then
-    echo "Using xinit..."
-    exec /usr/bin/xinit /etc/X11/xinit/xinitrc -- "$XSERVER" :0 vt1 -nocursor -nolisten tcp < /dev/tty1 > /dev/tty1 2>&1
-else
-    echo "xinit not found, starting X directly..."
-    "$XSERVER" :0 vt1 -nocursor -nolisten tcp &
-    XPID=$!
-    echo "X server PID: $XPID"
-    sleep 3
+# Method: Start X directly in background, then run xinitrc
+"$XSERVER" :0 vt1 -nocursor -nolisten tcp -keeptty &
+XPID=$!
+echo "X server PID: $XPID"
 
-    if ! kill -0 $XPID 2>/dev/null; then
-        echo "ERROR: X server failed to start!"
-        cat /var/log/Xorg.0.log 2>/dev/null | tail -50
-        exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
+# Wait for X to be ready
+echo "Waiting for X server..."
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if [ -e /tmp/.X11-unix/X0 ]; then
+        echo "X server socket found after ${i}s"
+        break
     fi
+    sleep 1
+done
 
-    echo "Running xinitrc..."
-    exec /etc/X11/xinit/xinitrc < /dev/tty1 > /dev/tty1 2>&1
+if [ ! -e /tmp/.X11-unix/X0 ]; then
+    echo "ERROR: X server socket not found!"
+    echo "=== X log ==="
+    cat /var/log/Xorg.0.log 2>&1 | tail -50
+    kill $XPID 2>/dev/null
+    exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
 fi
+
+# Check if X is still running
+if ! kill -0 $XPID 2>/dev/null; then
+    echo "ERROR: X server died!"
+    echo "=== X log ==="
+    cat /var/log/Xorg.0.log 2>&1 | tail -50
+    exec /bin/sh < /dev/tty1 > /dev/tty1 2>&1
+fi
+
+echo "X server running successfully"
+
+# Now run the xinitrc
+echo "=== Starting xinitrc ==="
+export DISPLAY=:0
+exec /etc/X11/xinit/xinitrc

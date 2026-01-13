@@ -3,6 +3,9 @@
 # Chromium Kiosk Browser Launcher
 #
 
+exec >> /var/log/kiosk.log 2>&1
+echo "=== kiosk-browser starting ==="
+
 # Load URL from environment or config
 if [ -z "$KIOSK_URL" ] && [ -f /etc/kiosk.conf ]; then
     . /etc/kiosk.conf
@@ -13,67 +16,80 @@ if [ -z "$KIOSK_URL" ]; then
     KIOSK_URL="https://luxcode.io/"
 fi
 
+export DISPLAY="${DISPLAY:-:0}"
+export HOME=/root
+
+echo "DISPLAY=$DISPLAY"
+echo "KIOSK_URL=$KIOSK_URL"
+
 # Find Chromium binary
+echo "Looking for Chromium..."
+ls -la /usr/bin/chromium* 2>&1 || echo "No chromium in /usr/bin"
+ls -la /usr/lib/chromium* 2>&1 || echo "No chromium in /usr/lib"
+
 CHROMIUM=""
-for c in /usr/bin/chromium /usr/bin/chromium-browser /usr/local/bin/chromium; do
+for c in /usr/bin/chromium /usr/bin/chromium-browser /usr/lib/chromium/chromium; do
     if [ -x "$c" ]; then
         CHROMIUM="$c"
+        echo "Found: $c"
         break
     fi
 done
 
 if [ -z "$CHROMIUM" ]; then
     echo "ERROR: Chromium not found!"
-    echo "Available browsers:"
-    ls -la /usr/bin/*chrom* 2>/dev/null || echo "  none"
-    ls -la /usr/bin/*firefox* 2>/dev/null || echo "  none"
-    echo "Falling back to xterm..."
-    exec xterm -e "echo 'Chromium not found. URL: $KIOSK_URL'; sh"
+    echo "Showing error in xterm..."
+    xterm -fullscreen -e "echo 'ERROR: Chromium not found'; echo 'URL was: $KIOSK_URL'; echo 'Press Enter for shell'; read x; sh" &
+    wait
+    exit 1
 fi
-
-echo "Starting browser: $CHROMIUM"
-echo "URL: $KIOSK_URL"
 
 # Create temp directory for Chromium profile
 CHROMIUM_DIR="/tmp/chromium-kiosk"
 mkdir -p "$CHROMIUM_DIR"
+rm -rf "$CHROMIUM_DIR"/*
 
-# Infinite loop to restart browser if it crashes
-while true; do
-    # Clear old data on each start
-    rm -rf "$CHROMIUM_DIR"/* 2>/dev/null
+echo "Starting Chromium: $CHROMIUM"
+echo "URL: $KIOSK_URL"
 
-    $CHROMIUM \
-        --kiosk \
-        --no-first-run \
-        --no-default-browser-check \
-        --disable-translate \
-        --disable-infobars \
-        --disable-session-crashed-bubble \
-        --disable-features=TranslateUI \
-        --noerrdialogs \
-        --disable-pinch \
-        --overscroll-history-navigation=0 \
-        --start-fullscreen \
-        --disable-restore-session-state \
-        --disable-breakpad \
-        --disable-hang-monitor \
-        --disable-client-side-phishing-detection \
-        --disable-component-update \
-        --disable-background-networking \
-        --disable-sync \
-        --disable-default-apps \
-        --disable-extensions \
-        --disable-popup-blocking \
-        --autoplay-policy=no-user-gesture-required \
-        --user-data-dir="$CHROMIUM_DIR" \
-        --window-position=0,0 \
-        --no-sandbox \
-        --disable-gpu \
-        --disable-software-rasterizer \
-        "$KIOSK_URL"
+# Run Chromium - NOT in a loop for debugging
+$CHROMIUM \
+    --kiosk \
+    --no-first-run \
+    --no-default-browser-check \
+    --disable-translate \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-features=TranslateUI \
+    --noerrdialogs \
+    --disable-pinch \
+    --overscroll-history-navigation=0 \
+    --start-fullscreen \
+    --disable-restore-session-state \
+    --disable-breakpad \
+    --disable-hang-monitor \
+    --disable-client-side-phishing-detection \
+    --disable-component-update \
+    --disable-background-networking \
+    --disable-sync \
+    --disable-default-apps \
+    --disable-extensions \
+    --disable-popup-blocking \
+    --autoplay-policy=no-user-gesture-required \
+    --user-data-dir="$CHROMIUM_DIR" \
+    --window-position=0,0 \
+    --no-sandbox \
+    --disable-gpu \
+    --disable-software-rasterizer \
+    --in-process-gpu \
+    --disable-dev-shm-usage \
+    --disable-setuid-sandbox \
+    "$KIOSK_URL" 2>&1
 
-    # Brief pause before restart
-    echo "Browser exited, restarting in 2 seconds..."
-    sleep 2
-done
+EXITCODE=$?
+echo "Chromium exited with code: $EXITCODE"
+
+# If we get here, Chromium died
+echo "Chromium crashed or exited. Showing error..."
+xterm -fullscreen -e "echo 'Chromium exited with code $EXITCODE'; echo 'Check /var/log/kiosk.log'; echo 'Press Enter for shell'; read x; sh" &
+wait
