@@ -29,13 +29,35 @@ case "$1" in
         [ -e /dev/console ] || mknod -m 600 /dev/console c 5 1
 
         # Load kernel modules for graphics
+        echo "Loading graphics modules..."
         modprobe drm 2>/dev/null || true
+        modprobe drm_kms_helper 2>/dev/null || true
+
+        # VM graphics
+        modprobe virtio-gpu 2>/dev/null || true
+        modprobe virtio_gpu 2>/dev/null || true
+        modprobe bochs-drm 2>/dev/null || true
+        modprobe bochs_drm 2>/dev/null || true
+        modprobe cirrus 2>/dev/null || true
+        modprobe qxl 2>/dev/null || true
+        modprobe vmwgfx 2>/dev/null || true
+        modprobe vboxvideo 2>/dev/null || true
+
+        # Real hardware
         modprobe i915 2>/dev/null || true
         modprobe nouveau 2>/dev/null || true
         modprobe radeon 2>/dev/null || true
         modprobe amdgpu 2>/dev/null || true
-        modprobe vboxvideo 2>/dev/null || true
-        modprobe vmwgfx 2>/dev/null || true
+
+        # Framebuffer fallback
+        modprobe simpledrm 2>/dev/null || true
+
+        # Wait for devices to appear
+        sleep 1
+
+        # Show what we got
+        echo "DRM devices:"
+        ls -la /dev/dri/ 2>/dev/null || echo "  No DRI devices found"
 
         # Load input modules
         modprobe evdev 2>/dev/null || true
